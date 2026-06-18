@@ -44,12 +44,12 @@ __constant__ char YCHARS[] = "89ab";
 //   pos 15-17:  3 hex (variable)   ← nonce bits 16-27
 //   pos 18:     '-'
 //   pos 19:     y = 8/9/a/b        ← nonce bits 28-29 (2 bits)
-//   pos 20-23:  4 hex (variable)   ← nonce bits 30-45
-//   pos 24:     '-'
-//   pos 25-27:  3 hex (variable)   ← nonce bits 46-57
+//   pos 20-22:  3 hex (variable)   ← nonce bits 30-41
+//   pos 23:     '-'
+//   pos 24-27:  4 hex (variable)   ← nonce bits 42-57
 //   pos 28-35:  last 8 hex (FIXED, parameter)
 //
-// Total: 60 bits of entropy (2^60 >> 2^33 needed)
+// Total: 14 hex + 2 variant bits = 58 bits of entropy (2^58 >> 2^33)
 
 __device__ __forceinline__ void build_uuid(
     uint64_t n,
@@ -77,9 +77,9 @@ __device__ __forceinline__ void build_uuid(
     u[20] = HEX[(n >> 30) & 0xF];
     u[21] = HEX[(n >> 34) & 0xF];
     u[22] = HEX[(n >> 38) & 0xF];
-    u[23] = HEX[(n >> 42) & 0xF];
-    u[24] = '-';
+    u[23] = '-';
 
+    u[24] = HEX[(n >> 42) & 0xF];
     u[25] = HEX[(n >> 46) & 0xF];
     u[26] = HEX[(n >> 50) & 0xF];
     u[27] = HEX[(n >> 54) & 0xF];

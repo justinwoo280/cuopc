@@ -155,9 +155,9 @@ func buildUUID(nonce uint64, first8, last8 string) string {
 	u[20] = hexNibble((nonce >> 30) & 0xF)
 	u[21] = hexNibble((nonce >> 34) & 0xF)
 	u[22] = hexNibble((nonce >> 38) & 0xF)
-	u[23] = hexNibble((nonce >> 42) & 0xF)
-	u[24] = '-'
+	u[23] = '-'
 
+	u[24] = hexNibble((nonce >> 42) & 0xF)
 	u[25] = hexNibble((nonce >> 46) & 0xF)
 	u[26] = hexNibble((nonce >> 50) & 0xF)
 	u[27] = hexNibble((nonce >> 54) & 0xF)
