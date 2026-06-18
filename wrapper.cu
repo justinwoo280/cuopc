@@ -82,7 +82,7 @@ extern "C" uint64_t test_sha512_gpu(const char* input_36) {
     uint64_t h0 = 0;
 
     cudaMalloc(&d_input, 36);
-    cudaMalloc(&d_H0, sizeof(uint64_t));
+    cudaMalloc(&d_H0, 2 * sizeof(uint64_t));
     cudaMemcpy(d_input, input_36, 36, cudaMemcpyHostToDevice);
 
     sha512_test_kernel<<<1, 1>>>(d_input, d_H0);
