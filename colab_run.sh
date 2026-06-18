@@ -50,13 +50,19 @@ nvcc -shared -Xcompiler -fPIC \
     kernel.cu wrapper.cu \
     -lcudart
 
+echo "==> Detecting CUDA library path..."
+CUDA_LIB_DIR=$(dirname "$(find /usr/local/cuda* -name 'libcudart.so' 2>/dev/null | head -1)")
+if [ -z "$CUDA_LIB_DIR" ] || [ "$CUDA_LIB_DIR" = "." ]; then
+    CUDA_LIB_DIR="/usr/local/cuda/lib64"
+fi
+echo "    CUDA libs: $CUDA_LIB_DIR"
+
 echo "==> Building Go binary..."
 CGO_CFLAGS="-I$(pwd)" \
-CGO_LDFLAGS="-L$(pwd) -lcuopc -lcudart -Wl,-rpath,$(pwd)" \
+CGO_LDFLAGS="-L$(pwd) -L${CUDA_LIB_DIR} -lcuopc -lcudart -Wl,-rpath,$(pwd) -Wl,-rpath,${CUDA_LIB_DIR}" \
 go build -o cuopc main.go
 
 echo "==> Build complete!"
 echo ""
 
-# Pass through any arguments (e.g., -test, -bits=33)
-LD_LIBRARY_PATH="$(pwd)" ./cuopc "$@"
+LD_LIBRARY_PATH="$(pwd):${CUDA_LIB_DIR}" ./cuopc "$@"
