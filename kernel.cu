@@ -32,8 +32,8 @@ static const __constant__ uint64_t K[80] = {
 #define SSIG0(x) (ROTR64(x, 1) ^ ROTR64(x, 8) ^ ((x) >> 7))
 #define SSIG1(x) (ROTR64(x, 19) ^ ROTR64(x, 61) ^ ((x) >> 6))
 
-static const char HEX[] = "0123456789abcdef";
-static const char YCHARS[] = "89ab";
+__constant__ char HEX[] = "0123456789abcdef";
+__constant__ char YCHARS[] = "89ab";
 
 // UUID v4 layout (36 chars):
 //   pos  0-7:   first 8 hex (FIXED, parameter)
