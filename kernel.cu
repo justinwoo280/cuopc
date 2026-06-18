@@ -107,7 +107,7 @@ __device__ __forceinline__ void sha512_single(const char* __restrict__ msg, uint
             ((uint64_t)msg[30] << 8)  | (uint64_t)msg[31];
     W[4]  = ((uint64_t)msg[32] << 56) | ((uint64_t)msg[33] << 48) |
             ((uint64_t)msg[34] << 40) | ((uint64_t)msg[35] << 32) |
-            0x0000008000000000ULL;
+            0x80000000ULL;
     W[5] = 0;  W[6] = 0;  W[7] = 0;
     W[8] = 0;  W[9] = 0;  W[10] = 0; W[11] = 0;
     W[12] = 0; W[13] = 0; W[14] = 0;
