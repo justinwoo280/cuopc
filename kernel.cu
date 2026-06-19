@@ -32,9 +32,6 @@ static const __constant__ uint64_t K[80] = {
 #define SSIG0(x) (ROTR64(x, 1) ^ ROTR64(x, 8) ^ ((x) >> 7))
 #define SSIG1(x) (ROTR64(x, 19) ^ ROTR64(x, 61) ^ ((x) >> 6))
 
-static const __constant__ char HEX[] = "0123456789abcdef";
-static const __constant__ char YCHARS[] = "89ab";
-
 // UUID v4 raw 16 bytes:
 //   bytes 0-3:   fixed (from first8 hex string)
 //   bytes 4-5:   variable from nonce bits 0-15
@@ -135,7 +132,7 @@ sha512_cracker_kernel(
     uint64_t H[2];
     sha512_16bytes(raw, H);
 
-    if ((H[0] >> 31) == 0) {
+    if ((H[0] >> 29) == 0) {
         if (atomicCAS(g_found, 0, 1) == 0) {
             *g_result_nonce = nonce;
             __threadfence();
