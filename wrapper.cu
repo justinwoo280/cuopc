@@ -76,14 +76,14 @@ extern "C" void cleanup_cracker(void) {
     d_last8        = NULL;
 }
 
-extern "C" uint64_t test_sha512_gpu(const char* input_36) {
+extern "C" uint64_t test_sha512_gpu(const char* input_16) {
     char* d_input = NULL;
     uint64_t* d_H0 = NULL;
     uint64_t h0 = 0;
 
-    cudaMalloc(&d_input, 36);
+    cudaMalloc(&d_input, 16);
     cudaMalloc(&d_H0, 2 * sizeof(uint64_t));
-    cudaMemcpy(d_input, input_36, 36, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_input, input_16, 16, cudaMemcpyHostToDevice);
 
     sha512_test_kernel<<<1, 1>>>(d_input, d_H0);
     cudaDeviceSynchronize();

@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/binary"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"os"
@@ -30,7 +31,7 @@ func main() {
 	targetBits := flag.Int("bits", 33, "leading zero bits required")
 	maxLaunches := flag.Int("max", 200, "max kernel launches (each ~67M hashes)")
 	runTest := flag.Bool("test", false, "run GPU SHA-512 correctness test and exit")
-	randOffset := flag.Bool("rand", false, "use random nonce offset (avoids leading 0000 in last group)")
+	randOffset := flag.Bool("rand", false, "use random nonce offset")
 	flag.Parse()
 
 	if *runTest {
@@ -52,9 +53,8 @@ func main() {
 	if *randOffset {
 		var buf [8]byte
 		rand.Read(buf[:])
-		nonceOffset = uint64(buf[0]) | uint64(buf[1])<<8 | uint64(buf[2])<<16 | uint64(buf[3])<<24 |
-			uint64(buf[4])<<32 | uint64(buf[5])<<40 | uint64(buf[6])<<48 | uint64(buf[7])<<56
-		nonceOffset &= (1 << 58) - 1 // keep within 58-bit nonce space
+		nonceOffset = binary.LittleEndian.Uint64(buf[:])
+		nonceOffset &= (1 << 58) - 1
 		fmt.Printf("  Nonce offset: 0x%016x\n", nonceOffset)
 	}
 
@@ -62,7 +62,7 @@ func main() {
 	fmt.Println("=== UUID v4 SHA-512 Cracker (CUDA) ===")
 	fmt.Printf("  Fixed first: %s\n", *first8)
 	fmt.Printf("  Fixed last:  %s\n", *last8)
-	fmt.Printf("  Target:      %d leading zero bits\n", *targetBits)
+	fmt.Printf("  Target:      %d leading zero bits (raw 16 bytes)\n", *targetBits)
 	fmt.Printf("  Per launch:  %d hashes\n", hashesPerLaunch)
 	fmt.Println()
 
@@ -96,15 +96,17 @@ func main() {
 			elapsed := time.Since(startTime)
 			attempts := nonce - baseNonce + totalHashes
 
-			uuid := buildUUID(nonce, *first8, *last8)
+			raw := nonceToRaw(nonce, *first8, *last8)
+			uuid := rawToUUID(raw)
 			fmt.Printf("\n========== FOUND ==========\n")
 			fmt.Printf("  Nonce:   %d (0x%x)\n", nonce, nonce)
 			fmt.Printf("  UUID:    %s\n", uuid)
-			verified := verify(uuid, *targetBits)
+			fmt.Printf("  Raw hex: %s\n", hex.EncodeToString(raw))
+			verified := verifyRaw(raw, *targetBits)
 			if verified {
 				fmt.Printf("  SHA-512 verified OK\n")
 			} else {
-				fmt.Printf("  verification FAILED (kernel bug)\n")
+				fmt.Printf("  verification FAILED\n")
 			}
 			fmt.Printf("  Time:    %v\n", elapsed.Round(time.Millisecond))
 			fmt.Printf("  Hashes:  ~%d (%.2e)\n", attempts, float64(attempts))
@@ -122,15 +124,19 @@ func main() {
 }
 
 func runGPUSelfTest() {
-	testUUID := "deadbeef-cafe-4bad-8ead-0123456789ab"
-	fmt.Printf("GPU SHA-512 self-test\n")
-	fmt.Printf("  Input:  %s\n", testUUID)
+	// Test with known raw 16 bytes: eb3668950e7c4cd7991011d87ea440bd
+	// SHA-512 of these raw bytes should start with 000000000e...
+	rawHex := "eb3668950e7c4cd7991011d87ea440bd"
+	raw, _ := hex.DecodeString(rawHex)
 
-	cpuHash := sha512.Sum512([]byte(testUUID))
+	fmt.Printf("GPU SHA-512 self-test (16 raw bytes)\n")
+	fmt.Printf("  Input:  %s\n", rawHex)
+
+	cpuHash := sha512.Sum512(raw)
 	cpuH0 := binary.BigEndian.Uint64(cpuHash[:8])
 	fmt.Printf("  CPU H0: 0x%016x\n", cpuH0)
 
-	ct := C.CString(testUUID)
+	ct := C.CString(string(raw))
 	gpuH0 := uint64(C.test_sha512_gpu(ct))
 	C.free(unsafe.Pointer(ct))
 	fmt.Printf("  GPU H0: 0x%016x\n", gpuH0)
@@ -143,51 +149,35 @@ func runGPUSelfTest() {
 	}
 }
 
-func buildUUID(nonce uint64, first8, last8 string) string {
-	u := make([]byte, 36)
+// nonceToRaw builds the raw 16-byte UUID from nonce, matching kernel logic
+func nonceToRaw(nonce uint64, first8, last8 string) []byte {
+	raw := make([]byte, 16)
 
-	u[0] = first8[0]; u[1] = first8[1]; u[2] = first8[2]; u[3] = first8[3]
-	u[4] = first8[4]; u[5] = first8[5]; u[6] = first8[6]; u[7] = first8[7]
-	u[8] = '-'
+	fb, _ := hex.DecodeString(first8)
+	lb, _ := hex.DecodeString(last8)
+	copy(raw[0:4], fb)
 
-	u[9]  = hexNibble((nonce >> 0) & 0xF)
-	u[10] = hexNibble((nonce >> 4) & 0xF)
-	u[11] = hexNibble((nonce >> 8) & 0xF)
-	u[12] = hexNibble((nonce >> 12) & 0xF)
-	u[13] = '-'
+	raw[4] = byte((nonce >> 8) & 0xFF)
+	raw[5] = byte(nonce & 0xFF)
+	raw[6] = 0x40 | byte((nonce>>16)&0x0F)
+	raw[7] = byte((nonce >> 20) & 0xFF)
+	raw[8] = 0x80 | byte((nonce>>28)&0x3F)
+	raw[9] = byte((nonce >> 34) & 0xFF)
+	raw[10] = byte((nonce >> 42) & 0xFF)
+	raw[11] = byte((nonce >> 50) & 0xFF)
 
-	u[14] = '4'
-	u[15] = hexNibble((nonce >> 16) & 0xF)
-	u[16] = hexNibble((nonce >> 20) & 0xF)
-	u[17] = hexNibble((nonce >> 24) & 0xF)
-	u[18] = '-'
-
-	yChars := []byte{'8', '9', 'a', 'b'}
-	u[19] = yChars[(nonce>>28)&0x3]
-	u[20] = hexNibble((nonce >> 30) & 0xF)
-	u[21] = hexNibble((nonce >> 34) & 0xF)
-	u[22] = hexNibble((nonce >> 38) & 0xF)
-	u[23] = '-'
-
-	u[24] = hexNibble((nonce >> 42) & 0xF)
-	u[25] = hexNibble((nonce >> 46) & 0xF)
-	u[26] = hexNibble((nonce >> 50) & 0xF)
-	u[27] = hexNibble((nonce >> 54) & 0xF)
-	u[28] = last8[0]; u[29] = last8[1]; u[30] = last8[2]; u[31] = last8[3]
-	u[32] = last8[4]; u[33] = last8[5]; u[34] = last8[6]; u[35] = last8[7]
-
-	return string(u)
+	copy(raw[12:16], lb)
+	return raw
 }
 
-func hexNibble(n uint64) byte {
-	if n < 10 {
-		return byte('0' + n)
-	}
-	return byte('a' + n - 10)
+// rawToUUID converts 16 raw bytes to UUID string format
+func rawToUUID(raw []byte) string {
+	h := hex.EncodeToString(raw)
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
-func verify(uuid string, targetBits int) bool {
-	hash := sha512.Sum512([]byte(uuid))
+func verifyRaw(raw []byte, targetBits int) bool {
+	hash := sha512.Sum512(raw)
 
 	leadingZeros := 0
 	for _, b := range hash[:] {
