@@ -9,6 +9,7 @@ package main
 import "C"
 
 import (
+	"crypto/rand"
 	"crypto/sha512"
 	"encoding/binary"
 	"flag"
@@ -29,6 +30,7 @@ func main() {
 	targetBits := flag.Int("bits", 33, "leading zero bits required")
 	maxLaunches := flag.Int("max", 200, "max kernel launches (each ~67M hashes)")
 	runTest := flag.Bool("test", false, "run GPU SHA-512 correctness test and exit")
+	randOffset := flag.Bool("rand", false, "use random nonce offset (avoids leading 0000 in last group)")
 	flag.Parse()
 
 	if *runTest {
@@ -37,13 +39,23 @@ func main() {
 	}
 
 	if *first8 == "" || *last8 == "" {
-		fmt.Fprintf(os.Stderr, "Usage: cuopc -first=<8hex> -last=<8hex> [-bits=33] [-max=200]\n")
+		fmt.Fprintf(os.Stderr, "Usage: cuopc -first=<8hex> -last=<8hex> [-bits=33] [-max=200] [-rand]\n")
 		fmt.Fprintf(os.Stderr, "       cuopc -test\n")
 		os.Exit(1)
 	}
 	if len(*first8) != 8 || len(*last8) != 8 {
 		fmt.Fprintf(os.Stderr, "first and last must each be exactly 8 hex chars\n")
 		os.Exit(1)
+	}
+
+	nonceOffset := uint64(0)
+	if *randOffset {
+		var buf [8]byte
+		rand.Read(buf[:])
+		nonceOffset = uint64(buf[0]) | uint64(buf[1])<<8 | uint64(buf[2])<<16 | uint64(buf[3])<<24 |
+			uint64(buf[4])<<32 | uint64(buf[5])<<40 | uint64(buf[6])<<48 | uint64(buf[7])<<56
+		nonceOffset &= (1 << 58) - 1 // keep within 58-bit nonce space
+		fmt.Printf("  Nonce offset: 0x%016x\n", nonceOffset)
 	}
 
 	hashesPerLaunch := uint64(blocksPerLaunch) * uint64(threadsPerBlock)
@@ -69,7 +81,7 @@ func main() {
 	totalHashes := uint64(0)
 
 	for launch := 0; launch < *maxLaunches; launch++ {
-		baseNonce := uint64(launch) * hashesPerLaunch
+		baseNonce := nonceOffset + uint64(launch)*hashesPerLaunch
 
 		if C.launch_kernel(C.uint64_t(baseNonce), C.uint32_t(blocksPerLaunch), C.uint32_t(threadsPerBlock)) != 0 {
 			fmt.Fprintln(os.Stderr, "kernel launch failed")
