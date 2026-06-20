@@ -149,30 +149,41 @@ func runGPUSelfTest() {
 	}
 }
 
-// nonceToRaw builds the raw 16-byte UUID from nonce, matching kernel logic
+// nonceToRaw builds the raw 16 bytes in .NET Guid.ToByteArray() mixed-endian layout
 func nonceToRaw(nonce uint64, first8, last8 string) []byte {
-	raw := make([]byte, 16)
+	rfc := make([]byte, 16)
 
 	fb, _ := hex.DecodeString(first8)
 	lb, _ := hex.DecodeString(last8)
-	copy(raw[0:4], fb)
+	copy(rfc[0:4], fb)
 
-	raw[4] = byte((nonce >> 8) & 0xFF)
-	raw[5] = byte(nonce & 0xFF)
-	raw[6] = 0x40 | byte((nonce>>16)&0x0F)
-	raw[7] = byte((nonce >> 20) & 0xFF)
-	raw[8] = 0x80 | byte((nonce>>28)&0x3F)
-	raw[9] = byte((nonce >> 34) & 0xFF)
-	raw[10] = byte((nonce >> 42) & 0xFF)
-	raw[11] = byte((nonce >> 50) & 0xFF)
+	rfc[4] = byte((nonce >> 8) & 0xFF)
+	rfc[5] = byte(nonce & 0xFF)
+	rfc[6] = 0x40 | byte((nonce>>16)&0x0F)
+	rfc[7] = byte((nonce >> 20) & 0xFF)
+	rfc[8] = 0x80 | byte((nonce>>28)&0x3F)
+	rfc[9] = byte((nonce >> 34) & 0xFF)
+	rfc[10] = byte((nonce >> 42) & 0xFF)
+	rfc[11] = byte((nonce >> 50) & 0xFF)
 
-	copy(raw[12:16], lb)
+	copy(rfc[12:16], lb)
+
+	raw := make([]byte, 16)
+	raw[0], raw[1], raw[2], raw[3] = rfc[3], rfc[2], rfc[1], rfc[0]
+	raw[4], raw[5] = rfc[5], rfc[4]
+	raw[6], raw[7] = rfc[7], rfc[6]
+	copy(raw[8:16], rfc[8:16])
 	return raw
 }
 
-// rawToUUID converts 16 raw bytes to UUID string format
+// rawToUUID converts .NET-layout raw bytes back to RFC UUID string format
 func rawToUUID(raw []byte) string {
-	h := hex.EncodeToString(raw)
+	rfc := make([]byte, 16)
+	rfc[0], rfc[1], rfc[2], rfc[3] = raw[3], raw[2], raw[1], raw[0]
+	rfc[4], rfc[5] = raw[5], raw[4]
+	rfc[6], rfc[7] = raw[7], raw[6]
+	copy(rfc[8:16], raw[8:16])
+	h := hex.EncodeToString(rfc)
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 

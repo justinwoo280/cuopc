@@ -32,14 +32,13 @@ static const __constant__ uint64_t K[80] = {
 #define SSIG0(x) (ROTR64(x, 1) ^ ROTR64(x, 8) ^ ((x) >> 7))
 #define SSIG1(x) (ROTR64(x, 19) ^ ROTR64(x, 61) ^ ((x) >> 6))
 
-// UUID v4 raw 16 bytes:
-//   bytes 0-3:   fixed (from first8 hex string)
-//   bytes 4-5:   variable from nonce bits 0-15
-//   byte  6:     0x40 | nonce[19:16]  (version 4 + 4 variable bits)
-//   byte  7:     nonce[27:20]
-//   byte  8:     0x80 | nonce[33:28]  (variant 10 + 6 variable bits)
-//   bytes 9-11:  nonce[57:34]
-//   bytes 12-15: fixed (from last8 hex string)
+// UUID v4 → .NET Guid.ToByteArray() mixed-endian raw 16 bytes:
+//   RFC bytes first, then reorder:
+//     raw[0..3]  = rfc[3..0]   (Data1 LE)
+//     raw[4..5]  = rfc[5..4]   (Data2 LE)
+//     raw[6..7]  = rfc[7..6]   (Data3 LE)
+//     raw[8..15] = rfc[8..15]  (unchanged)
+//   Where rfc[] is standard UUID v4 big-endian layout.
 
 __device__ __forceinline__ void build_uuid_raw(
     uint64_t n,
@@ -47,30 +46,38 @@ __device__ __forceinline__ void build_uuid_raw(
     const char* __restrict__ last8,
     char* __restrict__ raw)
 {
+    char rfc[16];
+
     for (int i = 0; i < 4; i++) {
         uint8_t hi = first8[i * 2];
         uint8_t lo = first8[i * 2 + 1];
         hi = (hi >= 'a') ? (hi - 'a' + 10) : (hi - '0');
         lo = (lo >= 'a') ? (lo - 'a' + 10) : (lo - '0');
-        raw[i] = (hi << 4) | lo;
+        rfc[i] = (hi << 4) | lo;
     }
 
-    raw[4] = (n >> 8) & 0xFF;
-    raw[5] = n & 0xFF;
-    raw[6] = 0x40 | ((n >> 16) & 0x0F);
-    raw[7] = (n >> 20) & 0xFF;
-    raw[8] = 0x80 | ((n >> 28) & 0x3F);
-    raw[9]  = (n >> 34) & 0xFF;
-    raw[10] = (n >> 42) & 0xFF;
-    raw[11] = (n >> 50) & 0xFF;
+    rfc[4] = (n >> 8) & 0xFF;
+    rfc[5] = n & 0xFF;
+    rfc[6] = 0x40 | ((n >> 16) & 0x0F);
+    rfc[7] = (n >> 20) & 0xFF;
+    rfc[8] = 0x80 | ((n >> 28) & 0x3F);
+    rfc[9]  = (n >> 34) & 0xFF;
+    rfc[10] = (n >> 42) & 0xFF;
+    rfc[11] = (n >> 50) & 0xFF;
 
     for (int i = 0; i < 4; i++) {
         uint8_t hi = last8[i * 2];
         uint8_t lo = last8[i * 2 + 1];
         hi = (hi >= 'a') ? (hi - 'a' + 10) : (hi - '0');
         lo = (lo >= 'a') ? (lo - 'a' + 10) : (lo - '0');
-        raw[12 + i] = (hi << 4) | lo;
+        rfc[12 + i] = (hi << 4) | lo;
     }
+
+    raw[0]  = rfc[3];  raw[1]  = rfc[2];  raw[2]  = rfc[1];  raw[3]  = rfc[0];
+    raw[4]  = rfc[5];  raw[5]  = rfc[4];
+    raw[6]  = rfc[7];  raw[7]  = rfc[6];
+    raw[8]  = rfc[8];  raw[9]  = rfc[9];  raw[10] = rfc[10]; raw[11] = rfc[11];
+    raw[12] = rfc[12]; raw[13] = rfc[13]; raw[14] = rfc[14]; raw[15] = rfc[15];
 }
 
 __device__ __forceinline__ void sha512_16bytes(const char* __restrict__ raw16, uint64_t* __restrict__ out) {
